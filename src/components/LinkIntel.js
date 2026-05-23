@@ -7,6 +7,16 @@ const ANCHOR_STATUSES = {
   used: { label: 'Used', color: 'var(--green)', bg: 'var(--green-light)' },
 };
 
+// Exa via Vercel proxy
+async function exaProxy(endpoint, body) {
+  const res = await fetch('/api/exa-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint, body }),
+  });
+  return res.json();
+}
+
 export default function LinkIntel({ settings, currentProject, onOpenPitch, linkIntelData, onLinkIntelDataChange }) {
   const { url, outreachGoal, dossier } = linkIntelData;
   const setUrl = (v) => onLinkIntelDataChange(prev => ({ ...prev, url: v }));
@@ -46,12 +56,8 @@ export default function LinkIntel({ settings, currentProject, onOpenPitch, linkI
     try {
       let content = `URL: ${url}`;
       try {
-        const exaRes = await fetch('https://api.exa.ai/contents', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': settings.exaKey },
-          body: JSON.stringify({ urls: [`https://${url.replace(/https?:\/\//, '')}`], highlights: true }),
-        });
-        const exaData = await exaRes.json();
+        const cleanUrl = url.startsWith('http') ? url : `https://${url}`;
+        const exaData = await exaProxy('contents', { urls: [cleanUrl], highlights: true });
         content = exaData.results?.[0]?.highlights?.join('\n') || content;
       } catch {}
 
@@ -156,7 +162,6 @@ Return ONLY valid JSON:
             </div>
           </div>
 
-          {/* Anchor plan — fixed toggle */}
           <div className="card">
             <div className="card-header">
               <span className="card-title">Anchor plan</span>

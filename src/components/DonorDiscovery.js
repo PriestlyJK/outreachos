@@ -11,7 +11,21 @@ const STATUS_CONFIG = {
   placed: { label: 'Placed ✓', class: 's-placed', dot: '#16A34A' },
 };
 
-// Fixed: uses portal-style fixed positioning to avoid z-index/overflow issues
+// All Exa calls go through our Vercel proxy to avoid CORS
+async function exaProxy(endpoint, body) {
+  const res = await fetch('/api/exa-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint, body }),
+  });
+  return res.json();
+}
+
+async function exaSearch(query, numResults = 15) {
+  const data = await exaProxy('search', { query, type: 'auto', numResults, contents: { highlights: true } });
+  return data.results || [];
+}
+
 function StatusDropdown({ value, onChange }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
@@ -169,21 +183,12 @@ function AddManualModal({ onAdd, onClose }) {
   );
 }
 
-async function exaSearch(query, exaKey, numResults = 15) {
-  const res = await fetch('https://api.exa.ai/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': exaKey },
-    body: JSON.stringify({ query, type: 'auto', numResults, contents: { highlights: true } }),
-  });
-  return (await res.json()).results || [];
-}
-
 async function filterWithClaude(profiles, query, anthropicKey) {
   if (!profiles.length) return [];
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 300, messages: [{ role: 'user', content: `Filter LinkedIn profiles for "${query}". Keep only real professionals in this niche with genuine jobs. Remove job seekers, spam, unrelated fields. Return ONLY JSON array of indices: [0,2,4]\n\nProfiles:\n${profiles.map((p, i) => `${i}: ${p.name} | ${p.desc}`).join('\n')}` }] }),
+    body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 300, messages: [{ role: 'user', content: `Filter LinkedIn profiles for "${query}". Keep only real professionals in this niche. Remove job seekers, spam, unrelated fields. Return ONLY JSON array of indices: [0,2,4]\n\nProfiles:\n${profiles.map((p, i) => `${i}: ${p.name} | ${p.desc}`).join('\n')}` }] }),
   });
   const text = (await res.json()).content?.[0]?.text || '[]';
   const match = text.match(/\[[\d,\s]*\]/);
@@ -193,7 +198,7 @@ async function filterWithClaude(profiles, query, anthropicKey) {
 
 export default function DonorDiscovery({ settings, currentProject, projects, donors, onDonorsChange, onOpenPitch, contacts, onContactsChange }) {
   const [activeTab, setActiveTab] = useState('all');
-  const [query, setQuery] = useState('digital asset management SaaS');
+  const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchStatus, setSearchStatus] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -229,9 +234,23 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
             [`${query} founder OR CEO site:linkedin.com/in`, `${query} VP marketing OR CMO site:linkedin.com/in`, `${query} content strategist site:linkedin.com/in`],
           ][round];
           setSearchStatus(`Round ${round + 1}: searching profiles...`);
-          const raw = (await Promise.all(roles.map(q => exaSearch(q, settings.exaKey, 15)))).flat();
+          const raw = (await Promise.all(roles.map(q => exaSearch(q, 15)))).flat();
           const seen = new Set([...existing, ...allFiltered.map(d => d.url)]);
-          const candidates = raw.filter(r => r.url?.includes('linkedin.com/in/') && !seen.has(r.url) && r.title?.length > 8 && !SPAM_WORDS.some(w => (r.highlights?.[0] || '').toLowerCase().includes(w))).map((r, i) => ({ name: r.title.replace(/ [-|].*LinkedIn.*/, '').trim(), url: r.url, notes: r.highlights?.[0]?.slice(0, 120) || '', is_linkedin: true, source: 'People', status: 'new', project_id: currentProject?.id || null, desc: r.highlights?.[0] || '' }));
+          const candidates = raw.filter(r =>
+            r.url?.includes('linkedin.com/in/') &&
+            !seen.has(r.url) &&
+            r.title?.length > 8 &&
+            !SPAM_WORDS.some(w => (r.highlights?.[0] || '').toLowerCase().includes(w))
+          ).map(r => ({
+            name: r.title.replace(/ [-|].*LinkedIn.*/, '').trim(),
+            url: r.url,
+            notes: r.highlights?.[0]?.slice(0, 120) || '',
+            is_linkedin: true,
+            source: 'People',
+            status: 'new',
+            project_id: currentProject?.id || null,
+            desc: r.highlights?.[0] || '',
+          }));
           candidates.forEach(c => seen.add(c.url));
           if (!candidates.length) break;
           setSearchStatus(`Filtering ${candidates.length} profiles with AI...`);
@@ -243,19 +262,29 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
           const toInsert = allFiltered.map(({ desc, ...d }) => d);
           const { data } = await supabase.from('donors').insert(toInsert).select();
           if (data) onDonorsChange([...data, ...donors]);
-        } else alert('No relevant profiles found. Try a different query.');
+        } else {
+          alert('No relevant profiles found. Try a different query.');
+        }
       } else {
         setSearchStatus('Searching for donor sites...');
-        const res = await exaSearch(`${query} blog "write for us" OR "guest post" OR "contribute"`, settings.exaKey, 20);
+        const res = await exaSearch(`${query} blog "write for us" OR "guest post" OR "contribute"`, 20);
         const existing = new Set(donors.map(d => d.url));
-        const toInsert = res.map(r => { let name; try { name = new URL(r.url).hostname.replace('www.', ''); } catch { name = r.url; } return { name, url: r.url, notes: r.title || '', is_linkedin: false, source: 'Exa', status: 'new', project_id: currentProject?.id || null }; }).filter(d => !existing.has(d.url));
+        const toInsert = res.map(r => {
+          let name;
+          try { name = new URL(r.url).hostname.replace('www.', ''); } catch { name = r.url; }
+          return { name, url: r.url, notes: r.title || '', is_linkedin: false, source: 'Exa', status: 'new', project_id: currentProject?.id || null };
+        }).filter(d => !existing.has(d.url));
         if (toInsert.length) {
           const { data } = await supabase.from('donors').insert(toInsert).select();
           if (data) onDonorsChange([...data, ...donors]);
         }
       }
-    } catch (e) { console.error(e); alert('Search failed: ' + e.message); }
-    setSearchStatus(''); setSearching(false);
+    } catch (e) {
+      console.error(e);
+      alert('Search failed: ' + e.message);
+    }
+    setSearchStatus('');
+    setSearching(false);
   };
 
   const handleCsvFile = (e) => {
@@ -275,7 +304,18 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
     const idx = (f) => mapping[f] ? headers.indexOf(mapping[f]) : -1;
     const toInsert = rows.map(row => {
       const url = idx('url') >= 0 ? row[idx('url')] : '';
-      return { name: idx('name') >= 0 ? row[idx('name')] : url, url, company: idx('company') >= 0 ? row[idx('company')] : '', role: idx('role') >= 0 ? row[idx('role')] : '', notes: idx('notes') >= 0 ? row[idx('notes')] : '', dr: idx('dr') >= 0 ? row[idx('dr')] : '', is_linkedin: url.includes('linkedin.com'), source: 'CSV', status: 'new', project_id: currentProject?.id || null };
+      return {
+        name: idx('name') >= 0 ? row[idx('name')] : url,
+        url,
+        company: idx('company') >= 0 ? row[idx('company')] : '',
+        role: idx('role') >= 0 ? row[idx('role')] : '',
+        notes: idx('notes') >= 0 ? row[idx('notes')] : '',
+        dr: idx('dr') >= 0 ? row[idx('dr')] : '',
+        is_linkedin: url.includes('linkedin.com'),
+        source: 'CSV',
+        status: 'new',
+        project_id: currentProject?.id || null,
+      };
     }).filter(d => d.name || d.url);
     const { data } = await supabase.from('donors').insert(toInsert).select();
     if (data) onDonorsChange([...data, ...donors]);
@@ -283,7 +323,13 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
   };
 
   const handleAddManual = async (form) => {
-    const { data } = await supabase.from('donors').insert({ ...form, is_linkedin: form.url?.includes('linkedin.com') || false, source: 'Manual', status: 'new', project_id: currentProject?.id || null }).select().single();
+    const { data } = await supabase.from('donors').insert({
+      ...form,
+      is_linkedin: form.url?.includes('linkedin.com') || false,
+      source: 'Manual',
+      status: 'new',
+      project_id: currentProject?.id || null,
+    }).select().single();
     if (data) onDonorsChange([data, ...donors]);
     setShowAddModal(false);
   };
@@ -296,7 +342,17 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
 
   const getNextBtn = (donor) => {
     const s = donor.status;
-    if (s === 'new' || s === 'analyzed') return <button className="next-btn nb-pitch" onClick={() => onOpenPitch({ donorUrl: donor.url, donorName: donor.name, donorRole: donor.role || '', donorCompany: donor.company || '', donorNotes: donor.notes || '', isLinkedIn: donor.is_linkedin, projectGoal: currentProject?.outreach_goal || '' })}>Generate pitch →</button>;
+    if (s === 'new' || s === 'analyzed') return (
+      <button className="next-btn nb-pitch" onClick={() => onOpenPitch({
+        donorUrl: donor.url,
+        donorName: donor.name,
+        donorRole: donor.role || '',
+        donorCompany: donor.company || '',
+        donorNotes: donor.notes || '',
+        isLinkedIn: donor.is_linkedin,
+        projectGoal: currentProject?.outreach_goal || '',
+      })}>Generate pitch →</button>
+    );
     if (s === 'pitched') return (
       <div style={{ display: 'flex', gap: 6 }}>
         <button className="next-btn nb-track" onClick={() => updateDonor(donor.id, { status: 'replied' })}>Mark replied</button>
@@ -332,7 +388,13 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
         <div className="search-card">
           <div className="field-label" style={{ marginBottom: 8 }}>Find contacts</div>
           <div className="search-row">
-            <input className="search-input" value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} placeholder="e.g. digital asset management SaaS..." />
+            <input
+              className="search-input"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+              placeholder="e.g. digital asset management SaaS, content marketing tools..."
+            />
             <button className="btn btn-primary" onClick={handleSearch} disabled={searching}>
               {searching && <span className="spinner" style={{ width: 14, height: 14 }} />}
               {searching ? 'Searching...' : activeTab === 'people' ? 'Find people' : 'Search via Exa'}
@@ -340,7 +402,8 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
           </div>
           {searching && searchStatus && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: 'var(--orange)' }}>
-              <span className="spinner" style={{ width: 12, height: 12, borderTopColor: 'var(--orange)' }} />{searchStatus}
+              <span className="spinner" style={{ width: 12, height: 12, borderTopColor: 'var(--orange)' }} />
+              {searchStatus}
             </div>
           )}
           <div className="tab-row" style={{ marginBottom: 0, marginTop: 10 }}>
@@ -356,7 +419,7 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
             <div className="data-table-th">Next step</div>
           </div>
           {filtered.map(donor => (
-            <div key={donor.id} className="data-table-row" style={{ gridTemplateColumns: '1fr 130px 120px 180px', position: 'relative' }}>
+            <div key={donor.id} className="data-table-row" style={{ gridTemplateColumns: '1fr 130px 120px 180px' }}>
               <div>
                 <div className="contact-name">
                   {donor.is_linkedin && <span className="linkedin-badge">in</span>}
