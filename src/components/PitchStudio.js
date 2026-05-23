@@ -45,17 +45,13 @@ function PitchCard({ title, variants, icon, color }) {
 function AddToBaseModal({ pitches, currentProject, onAdd, onClose }) {
   const [channel, setChannel] = useState('email');
   const [selectedPitch, setSelectedPitch] = useState('email1');
-  const [notes, setNotes] = useState('');
   const [contactName, setContactName] = useState('');
+  const [notes, setNotes] = useState('');
 
   const pitchOptions = [
-    { id: 'email1', label: 'Email v1' },
-    { id: 'email2', label: 'Email v2' },
-    { id: 'email3', label: 'Email v3' },
-    { id: 'followup1', label: 'Follow-up 1' },
-    { id: 'followup2', label: 'Follow-up 2' },
-    { id: 'linkedinInvite1', label: 'LinkedIn Invite' },
-    { id: 'linkedinInmail1', label: 'LinkedIn InMail' },
+    { id: 'email1', label: 'Email v1' }, { id: 'email2', label: 'Email v2' }, { id: 'email3', label: 'Email v3' },
+    { id: 'followup1', label: 'Follow-up 1' }, { id: 'followup2', label: 'Follow-up 2' },
+    { id: 'linkedinInvite1', label: 'LinkedIn Invite' }, { id: 'linkedinInmail1', label: 'LinkedIn InMail' },
   ].filter(o => pitches && pitches[o.id]);
 
   const getPitchText = (id) => {
@@ -72,7 +68,7 @@ function AddToBaseModal({ pitches, currentProject, onAdd, onClose }) {
           <button className="btn btn-ghost btn-sm" onClick={onClose}><i className="ti ti-x" /></button>
         </div>
         <div className="modal-body">
-          <div className="field-group"><label className="field-label">Contact name</label><input className="field-input" value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Name or domain" autoFocus /></div>
+          <div className="field-group"><label className="field-label">Contact name *</label><input className="field-input" value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Name or domain" autoFocus /></div>
           <div className="field-group"><label className="field-label">Channel used</label><select className="field-select" value={channel} onChange={e => setChannel(e.target.value)}><option value="email">Email</option><option value="linkedin">LinkedIn</option><option value="both">Both</option></select></div>
           <div className="field-group">
             <label className="field-label">Pitch sent</label>
@@ -81,8 +77,8 @@ function AddToBaseModal({ pitches, currentProject, onAdd, onClose }) {
             </select>
           </div>
           {selectedPitch && pitches?.[selectedPitch] && (
-            <div style={{ background: 'var(--bg-3)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
-              {getPitchText(selectedPitch).slice(0, 300)}...
+            <div style={{ background: 'var(--bg-3)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, maxHeight: 100, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+              {getPitchText(selectedPitch).slice(0, 250)}...
             </div>
           )}
           <div className="field-group"><label className="field-label">Notes</label><textarea className="field-input field-textarea" value={notes} onChange={e => setNotes(e.target.value)} style={{ minHeight: 50 }} /></div>
@@ -96,12 +92,13 @@ function AddToBaseModal({ pitches, currentProject, onAdd, onClose }) {
   );
 }
 
-export default function PitchStudio({ settings, currentProject, initialData, contacts, onContactsChange }) {
-  const [donorUrl, setDonorUrl] = useState(initialData?.donorUrl || '');
-  const [donorName, setDonorName] = useState(initialData?.donorName || '');
-  const [dossier, setDossier] = useState(initialData?.dossier || null);
-  const [outreachGoal, setOutreachGoal] = useState(initialData?.outreachGoal || currentProject?.outreach_goal || '');
-  const [anchor, setAnchor] = useState(initialData?.selectedAnchor || '');
+export default function PitchStudio({ settings, currentProject, pitchData, onPitchDataChange, contacts, onContactsChange }) {
+  // All state persisted via props from App.js
+  const [donorUrl, setDonorUrl] = useState(pitchData?.donorUrl || '');
+  const [donorName, setDonorName] = useState(pitchData?.donorName || '');
+  const [dossier, setDossier] = useState(pitchData?.dossier || null);
+  const [outreachGoal, setOutreachGoal] = useState(pitchData?.outreachGoal || currentProject?.outreach_goal || '');
+  const [anchor, setAnchor] = useState(pitchData?.selectedAnchor || '');
   const [mode, setMode] = useState(settings.outreachMode || 'both');
   const [tone, setTone] = useState(settings.tone || 'friendly');
   const [generating, setGenerating] = useState(false);
@@ -116,15 +113,16 @@ export default function PitchStudio({ settings, currentProject, initialData, con
   const [newPromptContent, setNewPromptContent] = useState('');
   const [editingPrompt, setEditingPrompt] = useState(null);
 
+  // When pitchData changes (from LinkIntel), update fields
   useEffect(() => {
-    if (initialData) {
-      setDonorUrl(initialData.donorUrl || '');
-      setDonorName(initialData.donorName || '');
-      setDossier(initialData.dossier || null);
-      setOutreachGoal(initialData.outreachGoal || currentProject?.outreach_goal || '');
-      setAnchor(initialData.selectedAnchor || '');
+    if (pitchData) {
+      if (pitchData.donorUrl) setDonorUrl(pitchData.donorUrl);
+      if (pitchData.donorName) setDonorName(pitchData.donorName);
+      if (pitchData.dossier) setDossier(pitchData.dossier);
+      if (pitchData.outreachGoal) setOutreachGoal(pitchData.outreachGoal);
+      if (pitchData.selectedAnchor) setAnchor(pitchData.selectedAnchor);
     }
-  }, [initialData]);
+  }, [pitchData?.donorUrl]); // eslint-disable-line
 
   useEffect(() => {
     supabase.from('saved_prompts').select('*').eq('type', 'pitch').order('created_at').then(({ data }) => { if (data) setSavedPrompts(data); });
@@ -132,12 +130,8 @@ export default function PitchStudio({ settings, currentProject, initialData, con
 
   const handleSelectPrompt = (id) => {
     setSelectedPromptId(id);
-    if (id) {
-      const p = savedPrompts.find(p => p.id === id);
-      if (p) setCustomPrompt(p.content);
-    } else {
-      setCustomPrompt('');
-    }
+    if (id) { const p = savedPrompts.find(p => p.id === id); if (p) setCustomPrompt(p.content); }
+    else setCustomPrompt('');
   };
 
   const handleSavePrompt = async () => {
@@ -176,7 +170,8 @@ export default function PitchStudio({ settings, currentProject, initialData, con
     if (!donorUrl.trim() && !donorName.trim()) return;
     setGenerating(true); setPitches(null);
     try {
-      const dossierText = dossier ? `\nDossier:\n- Summary: ${dossier.summary}\n- Key topics: ${(dossier.keyTopics || []).join(', ')}\n- Recent content: ${(dossier.recentContent || []).join(' | ')}\n- Best outreach angle: ${dossier.outreachAngle}` : '';
+      const dossierText = dossier ? `\nDossier:\n- Summary: ${dossier.summary}\n- Key topics: ${(dossier.keyTopics || []).join(', ')}\n- Recent content: ${(dossier.recentContent || []).join(' | ')}\n- Achievements: ${(dossier.achievements || []).join(' | ')}\n- Best outreach angle: ${dossier.outreachAngle}` : '';
+
       const system = `You are an expert outreach copywriter. Write highly personalized, human outreach messages.
 
 NEVER use: ${SPAM_WORDS.join(', ')}
@@ -201,8 +196,7 @@ Return ONLY valid JSON:
   "followup2": {"subject": "...", "body": "...", "timing": "10 days after"}
 }`;
 
-      const user = `Our product: ${settings.ourProduct}\nContact: ${donorName || donorUrl}\nURL: ${donorUrl}\nOutreach goal: ${outreachGoal}${anchor ? `\nAnchor (use naturally if relevant): ${anchor}` : ''}${dossierText}`;
-      const raw = await callAI(system, user);
+      const raw = await callAI(system, `Our product: ${settings.ourProduct}\nContact: ${donorName || donorUrl}\nURL: ${donorUrl}\nOutreach goal: ${outreachGoal}${anchor ? `\nAnchor (use naturally if relevant): ${anchor}` : ''}${dossierText}`);
       const match = raw.match(/\{[\s\S]*\}/);
       if (match) setPitches(JSON.parse(match[0]));
       else throw new Error('Invalid response');
@@ -244,36 +238,30 @@ Return ONLY valid JSON:
                 </div>
               </div>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: showSettings ? 14 : 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div className="field-group"><label className="field-label">Contact name</label><input className="field-input" value={donorName} onChange={e => setDonorName(e.target.value)} placeholder="Sarah Johnson or bynder.com" /></div>
               <div className="field-group"><label className="field-label">URL or LinkedIn</label><input className="field-input" value={donorUrl} onChange={e => setDonorUrl(e.target.value)} placeholder="linkedin.com/in/... or site.com" /></div>
               <div className="field-group"><label className="field-label">Outreach goal</label><input className="field-input" value={outreachGoal} onChange={e => setOutreachGoal(e.target.value)} placeholder="What do you want from this contact?" /></div>
               <div className="field-group"><label className="field-label">Anchor text (optional)</label><input className="field-input" value={anchor} onChange={e => setAnchor(e.target.value)} placeholder="digital asset management" /></div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginTop: 10 }}>
               <div className="field-group">
                 <label className="field-label">Custom prompt (optional)</label>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <select className="field-select" value={selectedPromptId} onChange={e => handleSelectPrompt(e.target.value)} style={{ flex: 1 }}>
-                    <option value="">— no saved prompt —</option>
-                    {savedPrompts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
+                <select className="field-select" value={selectedPromptId} onChange={e => handleSelectPrompt(e.target.value)}>
+                  <option value="">— no saved prompt —</option>
+                  {savedPrompts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
               </div>
-              {showSettings && (
-                <>
-                  <div className="field-group"><label className="field-label">Mode</label><select className="field-select" value={mode} onChange={e => setMode(e.target.value)}><option value="both">Both (auto)</option><option value="partnership">Partnership</option><option value="discovery">Discovery</option></select></div>
-                </>
+              {(customPrompt || showSettings) && (
+                <div className="field-group">
+                  <label className="field-label">Custom instructions</label>
+                  <textarea className="field-input field-textarea" value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} placeholder="e.g. Keep all emails under 3 sentences..." style={{ minHeight: 60 }} />
+                </div>
               )}
             </div>
-            {(customPrompt || showSettings) && (
-              <div className="field-group">
-                <label className="field-label">Custom instructions</label>
-                <textarea className="field-input field-textarea" value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} placeholder="e.g. Keep all emails under 3 sentences. Always mention our free trial..." style={{ minHeight: 60 }} />
-              </div>
-            )}
             {showSettings && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <div className="field-group"><label className="field-label">Mode</label><select className="field-select" value={mode} onChange={e => setMode(e.target.value)}><option value="both">Both (auto)</option><option value="partnership">Partnership</option><option value="discovery">Discovery</option></select></div>
                 <div className="field-group"><label className="field-label">Tone</label><select className="field-select" value={tone} onChange={e => setTone(e.target.value)}><option value="friendly">Friendly / casual</option><option value="professional">Professional</option><option value="neutral">Neutral</option></select></div>
               </div>
             )}
@@ -344,10 +332,10 @@ Return ONLY valid JSON:
                     <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{p.content.slice(0, 100)}...</div>
                   </div>
                   <button className="btn btn-sm btn-ghost" onClick={() => { setEditingPrompt(p); setNewPromptName(p.name); setNewPromptContent(p.content); }}><i className="ti ti-pencil" style={{ fontSize: 13 }} /></button>
-                  <button className="btn btn-sm btn-ghost" style={{ color: 'var(--coral)' }} onClick={() => handleDeletePrompt(p.id)}><i className="ti ti-trash" style={{ fontSize: 13 }} /></button>
+                  <button className="btn btn-sm btn-ghost" style={{ color: 'var(--coral, #E24B4A)' }} onClick={() => handleDeletePrompt(p.id)}><i className="ti ti-trash" style={{ fontSize: 13 }} /></button>
                 </div>
               ))}
-              {savedPrompts.length === 0 && <div style={{ textAlign: 'center', padding: 24, fontSize: 13, color: 'var(--text-3)' }}>No saved prompts yet. Create one above.</div>}
+              {savedPrompts.length === 0 && <div style={{ textAlign: 'center', padding: 24, fontSize: 13, color: 'var(--text-3)' }}>No saved prompts yet.</div>}
             </div>
           </div>
         </div>

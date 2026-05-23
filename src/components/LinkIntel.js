@@ -7,23 +7,29 @@ const ANCHOR_STATUSES = {
   used: { label: 'Used', color: 'var(--green)', bg: 'var(--green-light)' },
 };
 
-export default function LinkIntel({ settings, currentProject, onOpenPitch }) {
-  const [url, setUrl] = useState('');
+export default function LinkIntel({ settings, currentProject, onOpenPitch, linkIntelData, onLinkIntelDataChange }) {
+  const { url, outreachGoal, dossier } = linkIntelData;
+  const setUrl = (v) => onLinkIntelDataChange(prev => ({ ...prev, url: v }));
+  const setOutreachGoal = (v) => onLinkIntelDataChange(prev => ({ ...prev, outreachGoal: v }));
+  const setDossier = (v) => onLinkIntelDataChange(prev => ({ ...prev, dossier: v }));
+
   const [analyzing, setAnalyzing] = useState(false);
-  const [dossier, setDossier] = useState(null);
-  const [outreachGoal, setOutreachGoal] = useState(currentProject?.outreach_goal || '');
   const [useAnchorPlan, setUseAnchorPlan] = useState(false);
-  const [showAnchorModal, setShowAnchorModal] = useState(false);
   const [anchors, setAnchors] = useState([]);
   const [selectedAnchor, setSelectedAnchor] = useState(null);
   const [newAnchorText, setNewAnchorText] = useState('');
 
   useEffect(() => {
-    setOutreachGoal(currentProject?.outreach_goal || '');
-    if (currentProject?.id) {
+    if (!outreachGoal && currentProject?.outreach_goal) {
+      onLinkIntelDataChange(prev => ({ ...prev, outreachGoal: currentProject.outreach_goal }));
+    }
+  }, [currentProject?.id]); // eslint-disable-line
+
+  useEffect(() => {
+    if (currentProject?.id && useAnchorPlan) {
       supabase.from('anchors').select('*').eq('project_id', currentProject.id).then(({ data }) => { if (data) setAnchors(data); });
     }
-  }, [currentProject?.id]);
+  }, [currentProject?.id, useAnchorPlan]);
 
   const callAI = async (system, user) => {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -52,20 +58,20 @@ export default function LinkIntel({ settings, currentProject, onOpenPitch }) {
       const pendingAnchors = anchors.filter(a => a.status !== 'used').map(a => a.text);
       const isLinkedIn = url.includes('linkedin.com');
 
-      const system = `You are an expert outreach researcher. Analyze this ${isLinkedIn ? 'LinkedIn profile' : 'website'} and build a detailed dossier for outreach. Focus on what's genuinely relevant and unique — not generic facts.
+      const system = `You are an expert outreach researcher. Analyze this ${isLinkedIn ? 'LinkedIn profile' : 'website'} and build a detailed dossier. Focus on what's genuinely relevant for personalized outreach.
 
 Return ONLY valid JSON:
 {
   "name": "person or site name",
   "type": "${isLinkedIn ? 'person' : 'site'}",
-  "summary": "2-3 sentences on who they are and why they matter for outreach",
+  "summary": "2-3 sentences on who they are and why they matter",
   "keyTopics": ["topic 1", "topic 2", "topic 3"],
-  "recentContent": ["specific post/article/case study 1", "specific post/article/case study 2", "specific post/article/case study 3"],
-  "companyOrProject": "their company, project, or main affiliation",
-  "achievements": ["notable achievement or fact 1", "notable achievement or fact 2"],
+  "recentContent": ["specific post/article 1", "specific post/article 2", "specific post/article 3"],
+  "companyOrProject": "their company or main affiliation",
+  "achievements": ["notable achievement 1", "notable achievement 2"],
   "outreachAngle": "the most compelling specific angle based on their actual content",
   "suggestedAnchor": "${pendingAnchors.length ? 'pick best from: ' + pendingAnchors.join(', ') : 'suggest natural anchor text'}",
-  "anchorReason": "why this anchor fits naturally in their content"
+  "anchorReason": "why this anchor fits naturally"
 }`;
 
       const raw = await callAI(system, `Our product: ${settings.ourProduct}\nOutreach goal: ${outreachGoal || 'general outreach'}\n\nAnalyze: ${url}\nContent:\n${content}`);
@@ -132,7 +138,6 @@ Return ONLY valid JSON:
       </div>
 
       <div className="scroll-body" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16, alignItems: 'start' }}>
-        {/* Left panel */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="card">
             <div className="card-header"><span className="card-title">Analyze contact</span></div>
@@ -151,12 +156,15 @@ Return ONLY valid JSON:
             </div>
           </div>
 
-          {/* Anchor plan toggle */}
+          {/* Anchor plan — fixed toggle */}
           <div className="card">
             <div className="card-header">
               <span className="card-title">Anchor plan</span>
               <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--text-3)' }}>optional</span>
-              <div onClick={() => setUseAnchorPlan(v => !v)} style={{ marginLeft: 'auto', width: 32, height: 18, borderRadius: 9, background: useAnchorPlan ? 'var(--orange)' : 'var(--border)', position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0 }}>
+              <div
+                onClick={() => setUseAnchorPlan(v => !v)}
+                style={{ marginLeft: 'auto', width: 32, height: 18, borderRadius: 9, background: useAnchorPlan ? 'var(--orange)' : 'var(--border-2)', position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0 }}
+              >
                 <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: useAnchorPlan ? 16 : 2, transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
               </div>
             </div>
@@ -183,14 +191,13 @@ Return ONLY valid JSON:
                       </div>
                     );
                   })}
-                  {anchors.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', padding: '12px 0' }}>No anchors yet</div>}
+                  {anchors.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', padding: '12px 0' }}>No anchors yet. Add one above.</div>}
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Right panel — dossier */}
         <div>
           {!dossier && !analyzing && (
             <div className="empty-state" style={{ marginTop: 60 }}>

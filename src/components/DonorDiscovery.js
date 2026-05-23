@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
 
 const SPAM_WORDS = ['open to work', 'looking for job', 'seeking opportunities', 'available for hire'];
@@ -11,23 +11,36 @@ const STATUS_CONFIG = {
   placed: { label: 'Placed ✓', class: 's-placed', dot: '#16A34A' },
 };
 
+// Fixed: uses portal-style fixed positioning to avoid z-index/overflow issues
 function StatusDropdown({ value, onChange }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const cfg = STATUS_CONFIG[value] || STATUS_CONFIG.new;
+
   useEffect(() => {
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    if (!open) return;
+    const h = (e) => { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
-  }, []);
-  const cfg = STATUS_CONFIG[value] || STATUS_CONFIG.new;
+  }, [open]);
+
+  const handleOpen = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setOpen(v => !v);
+  };
+
   return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
-      <button className={`status-badge ${cfg.class}`} onClick={() => setOpen(v => !v)}>
+    <div ref={btnRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <button className={`status-badge ${cfg.class}`} onClick={handleOpen}>
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot, display: 'inline-block' }} />
         {cfg.label} <i className="ti ti-chevron-down" style={{ fontSize: 10 }} />
       </button>
       {open && (
-        <div className="status-dropdown">
+        <div style={{ position: 'fixed', top: pos.top, left: pos.left, background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: 4, zIndex: 9999, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 150 }}>
           {Object.entries(STATUS_CONFIG).map(([k, v]) => (
             <div key={k} className="status-dd-item" onClick={() => { onChange(k); setOpen(false); }}>
               <span className="status-dd-dot" style={{ background: v.dot }} />{v.label}
@@ -41,12 +54,16 @@ function StatusDropdown({ value, onChange }) {
 
 function ProjectAssignBtn({ donor, projects, onAssign }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+
   useEffect(() => {
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    if (!open) return;
+    const h = (e) => { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
-  }, []);
+  }, [open]);
+
   const proj = projects.find(p => p.id === donor.project_id);
   if (proj) return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -54,13 +71,22 @@ function ProjectAssignBtn({ donor, projects, onAssign }) {
       <span style={{ fontSize: 11, color: 'var(--text-2)', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{proj.name}</span>
     </div>
   );
+
+  const handleOpen = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setOpen(v => !v);
+  };
+
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button className="proj-add-btn" onClick={() => setOpen(v => !v)}>
+    <div ref={btnRef} style={{ position: 'relative' }}>
+      <button className="proj-add-btn" onClick={handleOpen}>
         <i className="ti ti-folder-plus" style={{ fontSize: 12 }} /> Add to project
       </button>
       {open && (
-        <div className="status-dropdown" style={{ minWidth: 170 }}>
+        <div style={{ position: 'fixed', top: pos.top, left: pos.left, background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: 4, zIndex: 9999, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 170 }}>
           {projects.map(p => (
             <div key={p.id} className="status-dd-item" onClick={() => { onAssign(donor.id, p.id); setOpen(false); }}>
               <div style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flexShrink: 0 }} />{p.name}
@@ -72,9 +98,8 @@ function ProjectAssignBtn({ donor, projects, onAssign }) {
   );
 }
 
-function AddToContactBaseModal({ donor, pitches, onAdd, onClose }) {
+function AddToContactBaseModal({ donor, onAdd, onClose }) {
   const [channel, setChannel] = useState('email');
-  const [selectedPitch, setSelectedPitch] = useState('');
   const [notes, setNotes] = useState('');
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -84,18 +109,8 @@ function AddToContactBaseModal({ donor, pitches, onAdd, onClose }) {
           <button className="btn btn-ghost btn-sm" onClick={onClose}><i className="ti ti-x" /></button>
         </div>
         <div className="modal-body">
-          <div className="field-group">
-            <label className="field-label">Channel used</label>
-            <select className="field-select" value={channel} onChange={e => setChannel(e.target.value)}>
-              <option value="email">Email</option>
-              <option value="linkedin">LinkedIn</option>
-              <option value="both">Both</option>
-            </select>
-          </div>
-          <div className="field-group">
-            <label className="field-label">Notes</label>
-            <textarea className="field-input field-textarea" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any context..." style={{ minHeight: 60 }} />
-          </div>
+          <div className="field-group"><label className="field-label">Channel used</label><select className="field-select" value={channel} onChange={e => setChannel(e.target.value)}><option value="email">Email</option><option value="linkedin">LinkedIn</option><option value="both">Both</option></select></div>
+          <div className="field-group"><label className="field-label">Notes</label><textarea className="field-input field-textarea" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any context..." style={{ minHeight: 60 }} /></div>
         </div>
         <div className="modal-footer">
           <button className="btn" onClick={onClose}>Cancel</button>
@@ -112,10 +127,7 @@ function CsvMappingModal({ headers, onConfirm, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span className="modal-title">Map CSV columns</span>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}><i className="ti ti-x" /></button>
-        </div>
+        <div className="modal-header"><span className="modal-title">Map CSV columns</span><button className="btn btn-ghost btn-sm" onClick={onClose}><i className="ti ti-x" /></button></div>
         <div className="modal-body">
           {fields.map(f => (
             <div key={f.key} className="field-group">
@@ -127,10 +139,7 @@ function CsvMappingModal({ headers, onConfirm, onClose }) {
             </div>
           ))}
         </div>
-        <div className="modal-footer">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onConfirm(mapping)}>Import</button>
-        </div>
+        <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={() => onConfirm(mapping)}>Import</button></div>
       </div>
     </div>
   );
@@ -142,10 +151,7 @@ function AddManualModal({ onAdd, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span className="modal-title">Add contact manually</span>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}><i className="ti ti-x" /></button>
-        </div>
+        <div className="modal-header"><span className="modal-title">Add contact manually</span><button className="btn btn-ghost btn-sm" onClick={onClose}><i className="ti ti-x" /></button></div>
         <div className="modal-body">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div className="field-group"><label className="field-label">Name *</label><input className="field-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Sarah Johnson" autoFocus /></div>
@@ -157,10 +163,7 @@ function AddManualModal({ onAdd, onClose }) {
           </div>
           <div className="field-group"><label className="field-label">Notes</label><textarea className="field-input field-textarea" value={form.notes} onChange={e => set('notes', e.target.value)} style={{ minHeight: 60 }} /></div>
         </div>
-        <div className="modal-footer">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => { if (form.name || form.url) onAdd(form); }}>Add contact</button>
-        </div>
+        <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={() => { if (form.name || form.url) onAdd(form); }}>Add contact</button></div>
       </div>
     </div>
   );
@@ -180,7 +183,7 @@ async function filterWithClaude(profiles, query, anthropicKey) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 300, messages: [{ role: 'user', content: `Filter LinkedIn profiles for "${query}". Keep only real professionals in this niche. Remove job seekers, spam, unrelated fields. Return ONLY JSON array of indices: [0,2,4]\n\nProfiles:\n${profiles.map((p, i) => `${i}: ${p.name} | ${p.desc}`).join('\n')}` }] }),
+    body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 300, messages: [{ role: 'user', content: `Filter LinkedIn profiles for "${query}". Keep only real professionals in this niche with genuine jobs. Remove job seekers, spam, unrelated fields. Return ONLY JSON array of indices: [0,2,4]\n\nProfiles:\n${profiles.map((p, i) => `${i}: ${p.name} | ${p.desc}`).join('\n')}` }] }),
   });
   const text = (await res.json()).content?.[0]?.text || '[]';
   const match = text.match(/\[[\d,\s]*\]/);
@@ -207,16 +210,10 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
     return d.source === activeTab;
   });
 
-  const saveDonor = async (donorData) => {
-    const { data } = await supabase.from('donors').insert(donorData).select().single();
-    if (data) onDonorsChange([data, ...donors]);
-    return data;
-  };
-
-  const updateDonor = async (id, changes) => {
+  const updateDonor = useCallback(async (id, changes) => {
     await supabase.from('donors').update(changes).eq('id', id);
     onDonorsChange(donors.map(d => d.id === id ? { ...d, ...changes } : d));
-  };
+  }, [donors, onDonorsChange]);
 
   const handleSearch = async () => {
     if (!query.trim() || searching) return;
@@ -246,7 +243,7 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
           const toInsert = allFiltered.map(({ desc, ...d }) => d);
           const { data } = await supabase.from('donors').insert(toInsert).select();
           if (data) onDonorsChange([...data, ...donors]);
-        } else alert('No relevant profiles found.');
+        } else alert('No relevant profiles found. Try a different query.');
       } else {
         setSearchStatus('Searching for donor sites...');
         const res = await exaSearch(`${query} blog "write for us" OR "guest post" OR "contribute"`, settings.exaKey, 20);
@@ -286,7 +283,8 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
   };
 
   const handleAddManual = async (form) => {
-    await saveDonor({ ...form, is_linkedin: form.url?.includes('linkedin.com') || false, source: 'Manual', status: 'new', project_id: currentProject?.id || null });
+    const { data } = await supabase.from('donors').insert({ ...form, is_linkedin: form.url?.includes('linkedin.com') || false, source: 'Manual', status: 'new', project_id: currentProject?.id || null }).select().single();
+    if (data) onDonorsChange([data, ...donors]);
     setShowAddModal(false);
   };
 
@@ -298,8 +296,13 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
 
   const getNextBtn = (donor) => {
     const s = donor.status;
-    if (s === 'new' || s === 'analyzed') return <button className="next-btn nb-pitch" onClick={() => onOpenPitch({ donorUrl: donor.url, donorName: donor.name, donorRole: donor.role, donorCompany: donor.company || '', donorNotes: donor.notes || '', isLinkedIn: donor.is_linkedin, projectGoal: currentProject?.outreach_goal || '' })}>Generate pitch →</button>;
-    if (s === 'pitched') return <div style={{ display: 'flex', gap: 6 }}><button className="next-btn nb-track" onClick={() => updateDonor(donor.id, { status: 'replied' })}>Mark replied</button><button className="next-btn nb-base" style={{ fontSize: 11, padding: '5px 8px' }} onClick={() => setAddToBaseModal(donor)}><i className="ti ti-database" /></button></div>;
+    if (s === 'new' || s === 'analyzed') return <button className="next-btn nb-pitch" onClick={() => onOpenPitch({ donorUrl: donor.url, donorName: donor.name, donorRole: donor.role || '', donorCompany: donor.company || '', donorNotes: donor.notes || '', isLinkedIn: donor.is_linkedin, projectGoal: currentProject?.outreach_goal || '' })}>Generate pitch →</button>;
+    if (s === 'pitched') return (
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button className="next-btn nb-track" onClick={() => updateDonor(donor.id, { status: 'replied' })}>Mark replied</button>
+        <button className="next-btn nb-base" style={{ fontSize: 11, padding: '5px 8px' }} onClick={() => setAddToBaseModal(donor)} title="Add to Contact Base"><i className="ti ti-database" /></button>
+      </div>
+    );
     if (s === 'replied') return <button className="next-btn nb-done" onClick={() => updateDonor(donor.id, { status: 'placed' })}>Mark placed →</button>;
     if (s === 'placed') return <button className="next-btn nb-base" style={{ fontSize: 11 }} onClick={() => setAddToBaseModal(donor)}><i className="ti ti-database" /> Save to base</button>;
     return null;
@@ -346,14 +349,14 @@ export default function DonorDiscovery({ settings, currentProject, projects, don
         </div>
 
         <div className="data-table">
-          <div className="data-table-head" style={{ gridTemplateColumns: '1fr 120px 110px 170px' }}>
+          <div className="data-table-head" style={{ gridTemplateColumns: '1fr 130px 120px 180px' }}>
             <div className="data-table-th">Contact</div>
             <div className="data-table-th">Status</div>
             <div className="data-table-th">Project</div>
             <div className="data-table-th">Next step</div>
           </div>
           {filtered.map(donor => (
-            <div key={donor.id} className="data-table-row" style={{ gridTemplateColumns: '1fr 120px 110px 170px' }}>
+            <div key={donor.id} className="data-table-row" style={{ gridTemplateColumns: '1fr 130px 120px 180px', position: 'relative' }}>
               <div>
                 <div className="contact-name">
                   {donor.is_linkedin && <span className="linkedin-badge">in</span>}

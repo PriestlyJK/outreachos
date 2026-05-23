@@ -71,7 +71,9 @@ function ProjectModal({ project, onSave, onClose }) {
         </div>
         <div className="modal-footer">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => { if (name.trim()) onSave({ name: name.trim(), color, description, goal_label: goalLabel, goal_target: parseInt(goalTarget) || 10, goal_current: project?.goal_current || 0, deadline: deadline || null, outreach_goal: outreachGoal }); }}>{project ? 'Save changes' : 'Create project'}</button>
+          <button className="btn btn-primary" onClick={() => {
+            if (name.trim()) onSave({ name: name.trim(), color, description, goal_label: goalLabel, goal_target: parseInt(goalTarget) || 10, goal_current: project?.goal_current || 0, deadline: deadline || null, outreach_goal: outreachGoal });
+          }}>{project ? 'Save changes' : 'Create project'}</button>
         </div>
       </div>
     </div>
@@ -190,7 +192,11 @@ function ProjectsScreen({ projects, loading, onOpen, onNew, onEdit, onDelete, on
 function MainApp({ projects, currentProject, settings, donors, contacts, onDonorsChange, onContactsChange, onChangeProject, onHome, onNewProject, onEditProject, onShowSettings }) {
   const [activeModule, setActiveModule] = useState('discovery');
   const [showProjDropdown, setShowProjDropdown] = useState(false);
+
+  // ── LIFTED STATE — persists across tab switches ──
   const [pitchData, setPitchData] = useState(null);
+  const [linkIntelData, setLinkIntelData] = useState({ url: '', outreachGoal: '', dossier: null });
+
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -199,7 +205,15 @@ function MainApp({ projects, currentProject, settings, donors, contacts, onDonor
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
+  // When project changes, update outreach goal in linkIntel
+  useEffect(() => {
+    if (currentProject?.outreach_goal) {
+      setLinkIntelData(prev => ({ ...prev, outreachGoal: prev.outreachGoal || currentProject.outreach_goal }));
+    }
+  }, [currentProject?.id]); // eslint-disable-line
+
   const pct = currentProject ? Math.round(((currentProject.goal_current || 0) / (currentProject.goal_target || 1)) * 100) : 0;
+
   const modules = [
     { id: 'discovery', label: 'Donor Discovery', icon: 'ti-users', color: '#FF7A59' },
     { id: 'linkintel', label: 'LinkIntel', icon: 'ti-analyze', color: '#4F6EF7' },
@@ -207,6 +221,11 @@ function MainApp({ projects, currentProject, settings, donors, contacts, onDonor
     { id: 'base', label: 'Contact Base', icon: 'ti-database', color: '#C87F0A' },
     { id: 'anchor', label: 'Anchor & Links', icon: 'ti-link', color: '#8B5CF6' },
   ];
+
+  const handleOpenPitch = useCallback((data) => {
+    setPitchData(data);
+    setActiveModule('pitch');
+  }, []);
 
   return (
     <div className="app-shell">
@@ -269,11 +288,23 @@ function MainApp({ projects, currentProject, settings, donors, contacts, onDonor
             <button className="pcb-edit" onClick={() => onEditProject(currentProject)}><i className="ti ti-pencil" style={{ fontSize: 12 }} />Edit</button>
           </div>
         )}
-        {activeModule === 'discovery' && <DonorDiscovery settings={settings} currentProject={currentProject} projects={projects} donors={donors} onDonorsChange={onDonorsChange} onOpenPitch={(data) => { setPitchData(data); setActiveModule('pitch'); }} contacts={contacts} onContactsChange={onContactsChange} />}
-        {activeModule === 'linkintel' && <LinkIntel settings={settings} currentProject={currentProject} onOpenPitch={(data) => { setPitchData(data); setActiveModule('pitch'); }} />}
-        {activeModule === 'pitch' && <PitchStudio settings={settings} currentProject={currentProject} initialData={pitchData} contacts={contacts} onContactsChange={onContactsChange} />}
-        {activeModule === 'base' && <ContactBase settings={settings} currentProject={currentProject} projects={projects} contacts={contacts} onContactsChange={onContactsChange} />}
-        {activeModule === 'anchor' && <AnchorLinks settings={settings} currentProject={currentProject} projects={projects} />}
+
+        {/* All modules rendered always, hidden when not active — preserves state */}
+        <div style={{ display: activeModule === 'discovery' ? 'contents' : 'none' }}>
+          <DonorDiscovery settings={settings} currentProject={currentProject} projects={projects} donors={donors} onDonorsChange={onDonorsChange} onOpenPitch={handleOpenPitch} contacts={contacts} onContactsChange={onContactsChange} />
+        </div>
+        <div style={{ display: activeModule === 'linkintel' ? 'contents' : 'none' }}>
+          <LinkIntel settings={settings} currentProject={currentProject} onOpenPitch={handleOpenPitch} linkIntelData={linkIntelData} onLinkIntelDataChange={setLinkIntelData} />
+        </div>
+        <div style={{ display: activeModule === 'pitch' ? 'contents' : 'none' }}>
+          <PitchStudio settings={settings} currentProject={currentProject} pitchData={pitchData} onPitchDataChange={setPitchData} contacts={contacts} onContactsChange={onContactsChange} />
+        </div>
+        <div style={{ display: activeModule === 'base' ? 'contents' : 'none' }}>
+          <ContactBase settings={settings} currentProject={currentProject} projects={projects} contacts={contacts} onContactsChange={onContactsChange} />
+        </div>
+        <div style={{ display: activeModule === 'anchor' ? 'contents' : 'none' }}>
+          <AnchorLinks settings={settings} currentProject={currentProject} projects={projects} />
+        </div>
       </div>
     </div>
   );
@@ -340,7 +371,18 @@ export default function App() {
     <>
       {screen === 'home' && <HomeScreen onNewProject={() => { setShowProjectModal(true); setEditingProject(null); }} onViewProjects={() => { loadProjects(); setScreen('projects'); }} />}
       {screen === 'projects' && <ProjectsScreen projects={projects} loading={loading} onOpen={(p) => { setCurrentProject(p); setScreen('app'); }} onNew={() => { setEditingProject(null); setShowProjectModal(true); }} onEdit={(p) => { setEditingProject(p); setShowProjectModal(true); }} onDelete={handleDeleteProject} onHome={() => setScreen('home')} />}
-      {screen === 'app' && <MainApp projects={projects} currentProject={currentProject} settings={settings} donors={donors} contacts={contacts} onDonorsChange={setDonors} onContactsChange={setContacts} onChangeProject={(p) => { setCurrentProject(p); }} onHome={() => setScreen('home')} onNewProject={() => { setEditingProject(null); setShowProjectModal(true); }} onEditProject={(p) => { setEditingProject(p); setShowProjectModal(true); }} onShowSettings={() => setShowSettings(true)} />}
+      {screen === 'app' && (
+        <MainApp
+          projects={projects} currentProject={currentProject} settings={settings}
+          donors={donors} contacts={contacts}
+          onDonorsChange={setDonors} onContactsChange={setContacts}
+          onChangeProject={(p) => setCurrentProject(p)}
+          onHome={() => setScreen('home')}
+          onNewProject={() => { setEditingProject(null); setShowProjectModal(true); }}
+          onEditProject={(p) => { setEditingProject(p); setShowProjectModal(true); }}
+          onShowSettings={() => setShowSettings(true)}
+        />
+      )}
       {showProjectModal && <ProjectModal project={editingProject} onSave={handleSaveProject} onClose={() => { setShowProjectModal(false); setEditingProject(null); }} />}
       {showSettings && <SettingsModal settings={settings} onSave={(s) => { setSettings(s); setShowSettings(false); }} onClose={() => setShowSettings(false)} />}
     </>
