@@ -1,7 +1,7 @@
 const RESEND_API_KEY = process.env.REACT_APP_RESEND_API_KEY;
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
-const REPORT_EMAIL = 'yanebasov@gmail.com';
+const REPORT_EMAIL = 'zlata.artiukhova@gmail.com';
 
 async function fetchSupabase(table, params = '') {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, {
