@@ -27,11 +27,7 @@ async function checkLinkViaAPI(link) {
     const res = await fetch('/api/check-link', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: link.url,
-        anchor: link.anchor_text,
-        targetUrl: link.target_page,
-      }),
+      body: JSON.stringify({ url: link.url, anchor: link.anchor_text, targetUrl: link.target_page }),
     });
     const data = await res.json();
     return data.status || 'no_response';
@@ -46,6 +42,7 @@ export default function AnchorLinks({ settings, currentProject, projects }) {
   const [links, setLinks] = useState([]);
   const [stopList, setStopList] = useState([]);
   const [stopSearch, setStopSearch] = useState('');
+  const [stopLoading, setStopLoading] = useState(false);
   const [savedPrompts, setSavedPrompts] = useState([]);
   const [filterProject, setFilterProject] = useState(currentProject?.id || 'all');
 
@@ -68,23 +65,29 @@ export default function AnchorLinks({ settings, currentProject, projects }) {
   const [checking, setChecking] = useState(false);
   const [checkingId, setCheckingId] = useState(null);
   const [stopInput, setStopInput] = useState('');
+  const [sendingReport, setSendingReport] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
 
   useEffect(() => { loadData(); }, [currentProject?.id]); // eslint-disable-line
 
   const loadData = async () => {
-    const [{ data: a }, { data: l }, { data: p }] = await Promise.all([
+    const [{ data: a }, { data: l }, { data: p }, { data: sl }] = await Promise.all([
       supabase.from('anchors').select('*').order('created_at', { ascending: false }),
       supabase.from('links').select('*').order('created_at', { ascending: false }),
       supabase.from('saved_prompts').select('*').eq('type', 'insert').order('created_at'),
+      supabase.from('stop_list').select('*').order('created_at', { ascending: false }),
     ]);
     if (a) setAnchors(a);
     if (l) setLinks(l);
     if (p) setSavedPrompts(p);
+    if (sl) setStopList(sl);
   };
 
   const filteredAnchors = anchors.filter(a => filterProject === 'all' || a.project_id === filterProject);
   const filteredLinks = links.filter(l => filterProject === 'all' || l.project_id === filterProject);
-  const filteredStopList = stopSearch.trim() ? stopList.filter(d => d.toLowerCase().includes(stopSearch.toLowerCase())) : stopList;
+  const filteredStopList = stopSearch.trim()
+    ? stopList.filter(d => d.domain.toLowerCase().includes(stopSearch.toLowerCase()))
+    : stopList;
 
   const addAnchor = async () => {
     if (!newAnchor.text.trim()) return;
@@ -114,7 +117,6 @@ export default function AnchorLinks({ settings, currentProject, projects }) {
 - Do NOT change the article structure or meaning
 - Return the FULL article with the link: <a href="URL">anchor text</a>
 ${insertPrompt ? `\nAdditional instructions:\n${insertPrompt}` : ''}`;
-
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': settings.anthropicKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
@@ -177,13 +179,48 @@ ${insertPrompt ? `\nAdditional instructions:\n${insertPrompt}` : ''}`;
     setLinks(prev => prev.filter(l => l.id !== id));
   };
 
-  const addToStopList = () => {
-    const domains = stopInput.split('\n').map(d => d.trim()).filter(Boolean);
-    setStopList(prev => [...new Set([...prev, ...domains])]);
+  // Stop list — saved in Supabase
+  const addToStopList = async () => {
+    if (!stopInput.trim()) return;
+    setStopLoading(true);
+    const domains = stopInput.split('\n').map(d => d.trim().replace(/https?:\/\//, '').split('/')[0]).filter(Boolean);
+    const existing = new Set(stopList.map(s => s.domain));
+    const toInsert = [...new Set(domains)].filter(d => !existing.has(d)).map(domain => ({ domain }));
+    if (toInsert.length) {
+      const { data } = await supabase.from('stop_list').insert(toInsert).select();
+      if (data) setStopList(prev => [...data, ...prev]);
+    }
     setStopInput('');
+    setStopLoading(false);
   };
 
-  const isInStopList = (domain) => stopList.some(d => d.toLowerCase() === domain.toLowerCase() || domain.toLowerCase().includes(d.toLowerCase()));
+  const removeFromStopList = async (id) => {
+    await supabase.from('stop_list').delete().eq('id', id);
+    setStopList(prev => prev.filter(s => s.id !== id));
+  };
+
+  const isInStopList = (searchTerm) => {
+    const t = searchTerm.toLowerCase().replace(/https?:\/\//, '').split('/')[0];
+    return stopList.some(s => s.domain.toLowerCase() === t || t.includes(s.domain.toLowerCase()));
+  };
+
+  // Send report manually
+  const handleSendReport = async () => {
+    setSendingReport(true);
+    try {
+      const res = await fetch('/api/send-report', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setReportSent(true);
+        setTimeout(() => setReportSent(false), 4000);
+      } else {
+        alert('Report failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e) {
+      alert('Report failed: ' + e.message);
+    }
+    setSendingReport(false);
+  };
 
   const anchorsByMonth = filteredAnchors.reduce((acc, a) => {
     const month = a.month || 'No month';
@@ -210,6 +247,10 @@ ${insertPrompt ? `\nAdditional instructions:\n${insertPrompt}` : ''}`;
           <option value="all">All projects</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
+        <button className="btn btn-sm" onClick={handleSendReport} disabled={sendingReport} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {sendingReport ? <span className="spinner" style={{ width: 13, height: 13 }} /> : <i className="ti ti-mail" />}
+          {reportSent ? '✓ Report sent!' : sendingReport ? 'Sending...' : 'Send report'}
+        </button>
       </div>
 
       <div className="scroll-body">
@@ -288,7 +329,7 @@ ${insertPrompt ? `\nAdditional instructions:\n${insertPrompt}` : ''}`;
                 </div>
               </div>
             ))}
-            {filteredAnchors.length === 0 && <div className="empty-state"><i className="ti ti-list empty-icon" /><div className="empty-title">No anchors yet</div><div className="empty-sub">Add anchors to your monthly plan</div></div>}
+            {filteredAnchors.length === 0 && <div className="empty-state"><i className="ti ti-list empty-icon" /><div className="empty-title">No anchors yet</div></div>}
           </div>
         )}
 
@@ -372,19 +413,14 @@ ${insertPrompt ? `\nAdditional instructions:\n${insertPrompt}` : ''}`;
               </div>
             </div>
 
-            <div style={{ background: 'var(--green-light)', border: '1px solid var(--green-border)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: 'var(--green)' }}>
-              <i className="ti ti-circle-check" style={{ marginRight: 6 }} />
-              Real HTTP check via Vercel function — verifies anchor text and target URL are actually present in the page. Accurate results, no false positives.
-            </div>
-
             {showLinkForm && (
               <div className="card" style={{ marginBottom: 14 }}>
                 <div className="card-header"><span className="card-title">Add link to track</span></div>
                 <div className="card-body">
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                    <div className="field-group"><label className="field-label">Page URL (where link is placed) *</label><input className="field-input" value={newLink.url} onChange={e => setNewLink(p => ({ ...p, url: e.target.value }))} placeholder="https://bynder.com/article" /></div>
+                    <div className="field-group"><label className="field-label">Page URL *</label><input className="field-input" value={newLink.url} onChange={e => setNewLink(p => ({ ...p, url: e.target.value }))} placeholder="https://bynder.com/article" /></div>
                     <div className="field-group"><label className="field-label">Anchor text</label><input className="field-input" value={newLink.anchor_text} onChange={e => setNewLink(p => ({ ...p, anchor_text: e.target.value }))} placeholder="digital asset management" /></div>
-                    <div className="field-group"><label className="field-label">Our page (target URL)</label><input className="field-input" value={newLink.target_page} onChange={e => setNewLink(p => ({ ...p, target_page: e.target.value }))} placeholder="https://pics.io/..." /></div>
+                    <div className="field-group"><label className="field-label">Our target URL</label><input className="field-input" value={newLink.target_page} onChange={e => setNewLink(p => ({ ...p, target_page: e.target.value }))} placeholder="https://pics.io/..." /></div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-primary" onClick={addLink}>Add link</button>
@@ -449,7 +485,9 @@ ${insertPrompt ? `\nAdditional instructions:\n${insertPrompt}` : ''}`;
                     <label className="field-label">Paste domains (one per line or from Ahrefs CSV)</label>
                     <textarea className="field-input field-textarea" value={stopInput} onChange={e => setStopInput(e.target.value)} placeholder="bynder.com&#10;martech.org&#10;..." style={{ minHeight: 150 }} />
                   </div>
-                  <button className="btn btn-primary" onClick={addToStopList}><i className="ti ti-plus" /> Add to stop list</button>
+                  <button className="btn btn-primary" onClick={addToStopList} disabled={stopLoading}>
+                    {stopLoading ? <><span className="spinner" style={{ width: 14, height: 14 }} />Saving...</> : <><i className="ti ti-plus" />Add to stop list</>}
+                  </button>
                 </div>
               </div>
               <div className="card">
@@ -460,7 +498,7 @@ ${insertPrompt ? `\nAdditional instructions:\n${insertPrompt}` : ''}`;
                     <div style={{ marginTop: 10, padding: '10px 14px', borderRadius: 8, background: isInStopList(stopSearch.trim()) ? '#FEF2F2' : 'var(--green-light)', border: '1px solid', borderColor: isInStopList(stopSearch.trim()) ? '#FECACA' : 'var(--green-border)' }}>
                       <span style={{ fontSize: 13, fontWeight: 500, color: isInStopList(stopSearch.trim()) ? '#E24B4A' : 'var(--green)' }}>
                         <i className={`ti ${isInStopList(stopSearch.trim()) ? 'ti-circle-x' : 'ti-circle-check'}`} style={{ marginRight: 6 }} />
-                        {isInStopList(stopSearch.trim()) ? `${stopSearch.trim()} is in stop list — skip this donor` : `${stopSearch.trim()} is NOT in stop list — safe to outreach`}
+                        {isInStopList(stopSearch.trim()) ? `In stop list — skip this donor` : `Not in stop list — safe to outreach`}
                       </span>
                     </div>
                   )}
@@ -471,16 +509,16 @@ ${insertPrompt ? `\nAdditional instructions:\n${insertPrompt}` : ''}`;
               <div className="card">
                 <div className="card-header">
                   <span className="card-title">Stop list ({stopList.length} domains)</span>
-                  <button className="btn btn-sm btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => navigator.clipboard.writeText(stopList.join('\n'))}>Export</button>
+                  <button className="btn btn-sm btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => navigator.clipboard.writeText(stopList.map(s => s.domain).join('\n'))}>Export</button>
                 </div>
                 <div className="card-body">
                   <input className="field-input" placeholder="Filter domains..." value={stopSearch} onChange={e => setStopSearch(e.target.value)} style={{ marginBottom: 10 }} />
                   <div style={{ maxHeight: 400, overflowY: 'auto' }}>
                     {filteredStopList.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', padding: '24px 0' }}>{stopList.length === 0 ? 'No domains yet' : 'No results'}</div>}
-                    {filteredStopList.map((domain, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--bg-3)', fontSize: 13, color: 'var(--text-2)', fontFamily: 'monospace' }}>
-                        {domain}
-                        <button className="btn btn-ghost btn-sm" onClick={() => setStopList(prev => prev.filter(d => d !== domain))} style={{ padding: '2px 6px', color: 'var(--text-3)' }}><i className="ti ti-x" style={{ fontSize: 11 }} /></button>
+                    {filteredStopList.map(item => (
+                      <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--bg-3)', fontSize: 13, color: 'var(--text-2)', fontFamily: 'monospace' }}>
+                        {item.domain}
+                        <button className="btn btn-ghost btn-sm" onClick={() => removeFromStopList(item.id)} style={{ padding: '2px 6px', color: 'var(--text-3)' }}><i className="ti ti-x" style={{ fontSize: 11 }} /></button>
                       </div>
                     ))}
                   </div>
