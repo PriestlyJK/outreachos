@@ -309,7 +309,7 @@ ${insertPrompt ? `\nAdditional instructions:\n${insertPrompt}` : ''}`;
                       <div key={anchor.id} className="data-table-row" style={{ gridTemplateColumns: '1fr 110px 110px 100px 110px 36px' }}>
                         <div style={{ fontSize: 13, fontWeight: 500, fontFamily: 'monospace', color: 'var(--text-1)' }}>{anchor.text}</div>
                         <div style={{ fontSize: 12, color: 'var(--text-2)' }}>{anchor.target_site || '—'}</div>
-                        <div>{anchor.target_url ? <a href={anchor.target_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--blue)' }}>Open ↗</a> : <span style={{ fontSize: 12, color: 'var(--text-3)' }}>—</span>}</div>
+                        <div>{anchor.target_url ? <a href={anchor.target_url.startsWith('http') ? anchor.target_url : `https://${anchor.target_url}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--blue)' }}>Open ↗</a> : <span style={{ fontSize: 12, color: 'var(--text-3)' }}>—</span>}</div>
                         <div>
                           <select value={anchor.status} onChange={e => updateAnchor(anchor.id, { status: e.target.value })} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-2)', color: 'var(--text-2)', fontFamily: 'var(--font)', cursor: 'pointer' }}>
                             <option value="pending">Pending</option>

@@ -11,20 +11,33 @@ const STATUS_CONFIG = {
 
 function StatusDropdown({ value, onChange }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const cfg = STATUS_CONFIG[value] || STATUS_CONFIG.new;
+
   useEffect(() => {
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    if (!open) return;
+    const h = (e) => { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
-  }, []);
-  const cfg = STATUS_CONFIG[value] || STATUS_CONFIG.new;
+  }, [open]);
+
+  const handleOpen = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setOpen(v => !v);
+  };
+
   return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
-      <button onClick={() => setOpen(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 6, border: 'none', background: cfg.bg, color: cfg.color, cursor: 'pointer', fontFamily: 'var(--font)' }}>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot }} />{cfg.label}<i className="ti ti-chevron-down" style={{ fontSize: 9 }} />
+    <div ref={btnRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <button onClick={handleOpen} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 6, border: 'none', background: cfg.bg, color: cfg.color, cursor: 'pointer', fontFamily: 'var(--font)' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot }} />
+        {cfg.label}<i className="ti ti-chevron-down" style={{ fontSize: 9 }} />
       </button>
       {open && (
-        <div className="status-dropdown">
+        <div style={{ position: 'fixed', top: pos.top, left: pos.left, background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: 4, zIndex: 9999, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 150 }}>
           {Object.entries(STATUS_CONFIG).map(([k, v]) => (
             <div key={k} className="status-dd-item" onClick={() => { onChange(k); setOpen(false); }}>
               <span className="status-dd-dot" style={{ background: v.dot }} />{v.label}
@@ -123,7 +136,12 @@ export default function ContactBase({ settings, currentProject, projects, contac
 
       <div className="scroll-body">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
-          {[{ label: 'Total', value: stats.total, color: 'var(--text-1)' }, { label: 'Pitched', value: stats.pitched, color: 'var(--orange)' }, { label: 'Replied', value: stats.replied, color: 'var(--green)' }, { label: 'Placed', value: stats.placed, color: '#16A34A' }].map(s => (
+          {[
+            { label: 'Total', value: stats.total, color: 'var(--text-1)' },
+            { label: 'Pitched', value: stats.pitched, color: 'var(--orange)' },
+            { label: 'Replied', value: stats.replied, color: 'var(--green)' },
+            { label: 'Placed', value: stats.placed, color: '#16A34A' },
+          ].map(s => (
             <div key={s.label} style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' }}>
               <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 500 }}>{s.label}</div>
               <div style={{ fontSize: 24, fontWeight: 600, color: s.color }}>{s.value}</div>
@@ -132,7 +150,7 @@ export default function ContactBase({ settings, currentProject, projects, contac
         </div>
 
         <div className="data-table">
-          <div className="data-table-head" style={{ gridTemplateColumns: '1fr 110px 80px 90px 90px 80px 80px' }}>
+          <div className="data-table-head" style={{ gridTemplateColumns: '1fr 120px 80px 90px 90px 80px 80px' }}>
             <div className="data-table-th">Contact</div>
             <div className="data-table-th">Status</div>
             <div className="data-table-th">Channel</div>
@@ -144,7 +162,7 @@ export default function ContactBase({ settings, currentProject, projects, contac
           {filtered.map(c => {
             const proj = projects.find(p => p.id === c.project_id);
             return (
-              <div key={c.id} className="data-table-row" style={{ gridTemplateColumns: '1fr 110px 80px 90px 90px 80px 80px' }}>
+              <div key={c.id} className="data-table-row" style={{ gridTemplateColumns: '1fr 120px 80px 90px 90px 80px 80px' }}>
                 <div>
                   <div className="contact-name">
                     {c.url?.includes('linkedin') && <span className="linkedin-badge">in</span>}
@@ -162,22 +180,38 @@ export default function ContactBase({ settings, currentProject, projects, contac
                 <div><Checkbox checked={c.reply_received} onChange={v => updateContact(c.id, { reply_received: v })} /></div>
                 <div><Checkbox checked={c.placed} onChange={v => updateContact(c.id, { placed: v, status: v ? 'placed' : c.status })} /></div>
                 <div>
-                  {c.pitch_used ? <button className="btn btn-ghost btn-sm" onClick={() => setViewPitch(c)} style={{ padding: '4px 8px', fontSize: 11 }}><i className="ti ti-eye" style={{ fontSize: 13 }} /></button> : <span style={{ fontSize: 11, color: 'var(--text-3)' }}>—</span>}
+                  {c.pitch_used
+                    ? <button className="btn btn-ghost btn-sm" onClick={() => setViewPitch(c)} style={{ padding: '4px 8px', fontSize: 11 }}><i className="ti ti-eye" style={{ fontSize: 13 }} /></button>
+                    : <span style={{ fontSize: 11, color: 'var(--text-3)' }}>—</span>}
                 </div>
               </div>
             );
           })}
-          {filtered.length === 0 && <div className="empty-state"><i className="ti ti-database empty-icon" /><div className="empty-title">No contacts yet</div><div className="empty-sub">Add contacts manually or from Pitch Studio</div></div>}
+          {filtered.length === 0 && (
+            <div className="empty-state">
+              <i className="ti ti-database empty-icon" />
+              <div className="empty-title">No contacts yet</div>
+              <div className="empty-sub">Add contacts manually or from Pitch Studio</div>
+            </div>
+          )}
         </div>
       </div>
 
       {showAddModal && <AddContactModal projects={projects} onAdd={handleAdd} onClose={() => setShowAddModal(false)} />}
+
       {viewPitch && (
         <div className="modal-overlay" onClick={() => setViewPitch(null)}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><span className="modal-title">Pitch — {viewPitch.name}</span><button className="btn btn-ghost btn-sm" onClick={() => setViewPitch(null)}><i className="ti ti-x" /></button></div>
-            <div style={{ background: 'var(--bg-3)', borderRadius: 8, padding: 16, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.7, whiteSpace: 'pre-wrap', maxHeight: 400, overflowY: 'auto' }}>{viewPitch.pitch_used || 'No pitch saved.'}</div>
-            <div className="modal-footer"><button className="btn" onClick={() => setViewPitch(null)}>Close</button></div>
+            <div className="modal-header">
+              <span className="modal-title">Pitch — {viewPitch.name}</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => setViewPitch(null)}><i className="ti ti-x" /></button>
+            </div>
+            <div style={{ background: 'var(--bg-3)', borderRadius: 8, padding: 16, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.7, whiteSpace: 'pre-wrap', maxHeight: 400, overflowY: 'auto' }}>
+              {viewPitch.pitch_used || 'No pitch saved.'}
+            </div>
+            <div className="modal-footer">
+              <button className="btn" onClick={() => setViewPitch(null)}>Close</button>
+            </div>
           </div>
         </div>
       )}
