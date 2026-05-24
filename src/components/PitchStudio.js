@@ -157,7 +157,7 @@ export default function PitchStudio({ settings, currentProject, pitchData, onPit
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': settings.anthropicKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 3000, system, messages: [{ role: 'user', content: user }] }),
+        body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 6000, system, messages: [{ role: 'user', content: user }] }),
       });
       return (await res.json()).content?.[0]?.text || '';
     } else {
